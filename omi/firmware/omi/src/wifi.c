@@ -56,7 +56,7 @@ static struct wifi_ap_sta_node sta_list[AP_MAX_STATIONS];
 
 /* WiFi state management */
 static wifi_state_t current_wifi_state = WIFI_STATE_OFF;
-static char ap_ssid[WIFI_SSID_MAX_LEN + 1] = "Omi CV1";
+static char ap_ssid[WIFI_SSID_MAX_LEN + 1] = "Attune CV1";
 static char ap_password[WIFI_MAX_PASSWORD_LEN + 1] = "12345678";
 
 #define TCP_REMOTE_IP "192.168.1.2"

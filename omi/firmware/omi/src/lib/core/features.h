@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /**
- * @brief Defines the bitmask for available Omi features.
+ * @brief Defines the bitmask for available Attune features.
  */
 typedef enum {
     OMI_FEATURE_SPEAKER = (1 << 0),

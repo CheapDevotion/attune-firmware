@@ -1,0 +1,77 @@
+name: Build Firmware
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: platformio-${{ runner.os }}-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: |
+            platformio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: python -m pip install --upgrade pip platformio
+
+      - name: Build xiao_nrf52840_sense firmware (UF2)
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/omi" \
+            -e CMAKE_PREFIX_PATH=/opt/toolchains \
+            -e PATH="/root/.local/bin:$PATH" \
+            ghcr.io/zephyrproject-rtos/ci \
+            bash -c '
+              set -e
+              cd /omi/firmware
+              if [ ! -d "v2.7.0/.west" ]; then
+                west init -m https://github.com/nrfconnect/sdk-nrf --mr v2.7.0 v2.7.0
+              fi
+              cd v2.7.0
+              west update -o=--depth=1 -n
+              west blobs fetch hal_nordic
+              west zephyr-export
+              pip install --user -r zephyr/scripts/requirements.txt
+              west build -b seeed_xiao_nrf52840_sense --pristine always ../devkit -- \
+                -DNCS_TOOLCHAIN_VERSION="NONE" \
+                -DCONF_FILE="prj_xiao_ble_sense_devkitv2-adafruit.conf" \
+                -DDTC_OVERLAY_FILE="/omi/firmware/devkit/overlay/xiao_ble_sense_devkitv2-adafruit.overlay" \
+                -DCMAKE_BUILD_TYPE="Release"
+              mkdir -p /omi/firmware/build/ci_build
+              cp build/zephyr/zephyr.uf2 /omi/firmware/build/ci_build/
+            '
+
+      - name: Upload UF2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiao_nrf52840_sense-uf2
+          path: omi/firmware/build/ci_build/zephyr.uf2
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: omi/firmware/build/ci_build/zephyr.uf2

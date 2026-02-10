@@ -1,35 +1,55 @@
+source "Kconfig.zephyr"
+
 menu "Attune XIAO minimal options"
 
 config OMI_CODEC_OPUS
-	bool "Enable Opus codec"
-	default y
+    bool "Enable Opus codec"
+    default y
 
 config OMI_ENABLE_OFFLINE_STORAGE
-	bool "Enable offline storage"
-	default n
+    bool "Enable offline storage"
+    select DISK_ACCESS
+    select FILE_SYSTEM
+    select FAT_FILESYSTEM_ELM
+    select FS_FATFS_MOUNT_MKFS
+    help
+        Enable offline SD-card storage support.
+    default n
 
 config OMI_ENABLE_ACCELEROMETER
-	bool "Enable accelerometer"
-	default n
+    bool "Enable accelerometer"
+    help
+        Enable accelerometer support.
+    default n
 
 config OMI_ENABLE_BUTTON
-	bool "Enable button support"
-	default y
+    bool "Enable button support"
+    help
+        Enable button handling.
+    default y
 
 config OMI_ENABLE_SPEAKER
-	bool "Enable speaker support"
-	default n
+    bool "Enable speaker support"
+    help
+        Enable speaker output support.
+    default n
 
 config OMI_ENABLE_BATTERY
-	bool "Enable battery support"
-	default y
+    bool "Enable battery support"
+    help
+        Enable battery telemetry support.
+    default y
 
 config OMI_ENABLE_USB
-	bool "Enable USB support"
-	default y
+    bool "Enable USB support"
+    help
+        Enable USB power-check support.
+    default y
 
 config OMI_ENABLE_HAPTIC
-	bool "Enable haptic support"
-	default n
+    bool "Enable haptic support"
+    help
+        Enable haptic feedback support.
+    default n
 
 endmenu

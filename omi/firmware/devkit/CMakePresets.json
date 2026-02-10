@@ -18,7 +18,7 @@
 				"CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
 				"CMAKE_BUILD_TYPE": "Debug",
 				"PLATFORM": "nrf52840",
-				"BOARD": "xiao_ble_sense",
+				"BOARD": "xiao_ble/nrf52840/sense",
 				"CACHED_CONF_FILE": "${sourceDir}/prj_xiao_ble_sense_devkitv1.conf",
 				"CONF_FILE": "${sourceDir}/prj_xiao_ble_sense_devkitv1.conf",
 				"DTC_OVERLAY_FILE": "${sourceDir}/overlay/xiao_ble_sense_devkitv1.overlay"
@@ -35,7 +35,7 @@
 				"CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
 				"CMAKE_BUILD_TYPE": "Debug",
 				"PLATFORM": "nrf52840",
-				"BOARD": "xiao_ble_sense",
+				"BOARD": "xiao_ble/nrf52840/sense",
 				"CACHED_CONF_FILE": "${sourceDir}/prj_xiao_ble_sense_devkitv1-spisd.conf",
 				"CONF_FILE": "${sourceDir}/prj_xiao_ble_sense_devkitv1-spisd.conf",
 				"DTC_OVERLAY_FILE": "${sourceDir}/overlay/xiao_ble_sense_devkitv1-spisd.overlay"
@@ -52,7 +52,7 @@
 				"CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
 				"CMAKE_BUILD_TYPE": "Debug",
 				"PLATFORM": "nrf52840",
-				"BOARD": "xiao_ble_sense",
+				"BOARD": "xiao_ble/nrf52840/sense",
 				"CACHED_CONF_FILE": "${sourceDir}/prj_xiao_ble_sense_devkitv2-adafruit.conf",
 				"CONF_FILE": "${sourceDir}/prj_xiao_ble_sense_devkitv2-adafruit.conf",
 				"DTC_OVERLAY_FILE": "${sourceDir}/overlay/xiao_ble_sense_devkitv2-adafruit.overlay"

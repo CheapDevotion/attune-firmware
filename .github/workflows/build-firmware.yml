@@ -19,7 +19,7 @@ jobs:
       BOARD: seeed_xiao_nrf52840_sense
       FIRMWARE_DIR: omi/firmware
       ZEPHYR_SDK_VERSION: 0.16.5
-      ZEPHYR_SDK_INSTALL_DIR: ${{ runner.temp }}/zephyr-sdk
+      ZEPHYR_SDK_INSTALL_DIR: ${{ github.workspace }}/.zephyr-sdk
     steps:
       - name: Checkout
         uses: actions/checkout@v4

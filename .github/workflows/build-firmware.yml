@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NCS_VERSION: v2.7.0
-      BOARD: seeed_xiao_nrf52840_sense
+      BOARD: xiao_ble_sense
       FIRMWARE_DIR: omi/firmware
       ZEPHYR_SDK_VERSION: 0.16.5
     steps:
@@ -88,7 +88,7 @@ jobs:
           set -euo pipefail
           export ZEPHYR_SDK_INSTALL_DIR="${GITHUB_WORKSPACE}/.zephyr-sdk"
           cd "${FIRMWARE_DIR}/${NCS_VERSION}"
-          west build -b "${BOARD}" --pristine always ../devkit -- \
+          west build --pristine always ../devkit -- \
             -DNCS_TOOLCHAIN_VERSION="NONE" \
             -DCONF_FILE="prj_xiao_ble_sense_devkitv2-adafruit.conf" \
             -DDTC_OVERLAY_FILE="${GITHUB_WORKSPACE}/${FIRMWARE_DIR}/devkit/overlay/xiao_ble_sense_devkitv2-adafruit.overlay" \

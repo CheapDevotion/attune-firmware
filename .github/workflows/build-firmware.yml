@@ -14,54 +14,97 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NCS_VERSION: v2.7.0
+      BOARD: seeed_xiao_nrf52840_sense
+      FIRMWARE_DIR: omi/firmware
+      ZEPHYR_SDK_VERSION: 0.16.5
+      ZEPHYR_SDK_INSTALL_DIR: ${{ runner.temp }}/zephyr-sdk
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Cache PlatformIO
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.platformio
-            ~/.cache/pip
-          key: platformio-${{ runner.os }}-${{ hashFiles('**/platformio.ini') }}
-          restore-keys: |
-            platformio-${{ runner.os }}-
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          sudo rm -rf /opt/ghc /usr/share/dotnet /usr/local/lib/android || true
+          sudo rm -rf /usr/local/share/boost /usr/local/lib/llvm || true
 
-      - name: Install PlatformIO
-        run: python -m pip install --upgrade pip platformio
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            ninja-build \
+            gperf \
+            ccache \
+            dfu-util \
+            device-tree-compiler \
+            xz-utils \
+            file \
+            wget
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Install west
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir west
+
+      - name: Fetch nRF Connect SDK
+        run: |
+          set -euo pipefail
+          cd "${FIRMWARE_DIR}"
+          if [ ! -d "${NCS_VERSION}/.west" ]; then
+            west init -m https://github.com/nrfconnect/sdk-nrf --mr "${NCS_VERSION}" "${NCS_VERSION}"
+          fi
+          cd "${NCS_VERSION}"
+          west update -o=--depth=1 -n
+          west blobs fetch hal_nordic
+          west zephyr-export
+          python -m pip install --no-cache-dir -r zephyr/scripts/requirements.txt
+
+      - name: Install Zephyr SDK (minimal)
+        run: |
+          set -euo pipefail
+          SDK_TARBALL="zephyr-sdk-${ZEPHYR_SDK_VERSION}_linux-x86_64.tar.xz"
+          SDK_URL="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${ZEPHYR_SDK_VERSION}/${SDK_TARBALL}"
+          mkdir -p "${ZEPHYR_SDK_INSTALL_DIR}"
+          wget -q "${SDK_URL}" -O "${RUNNER_TEMP}/${SDK_TARBALL}"
+          tar -C "${RUNNER_TEMP}" -xf "${RUNNER_TEMP}/${SDK_TARBALL}"
+          mv "${RUNNER_TEMP}/zephyr-sdk-${ZEPHYR_SDK_VERSION}" "${ZEPHYR_SDK_INSTALL_DIR}"
+          rm -f "${RUNNER_TEMP}/${SDK_TARBALL}"
 
       - name: Build xiao_nrf52840_sense firmware (UF2)
+        env:
+          ZEPHYR_TOOLCHAIN_VARIANT: zephyr
+          ZEPHYR_SDK_INSTALL_DIR: ${{ env.ZEPHYR_SDK_INSTALL_DIR }}
         run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/omi" \
-            -e CMAKE_PREFIX_PATH=/opt/toolchains \
-            -e PATH="/root/.local/bin:$PATH" \
-            ghcr.io/zephyrproject-rtos/ci \
-            bash -c '
-              set -e
-              cd /omi/firmware
-              if [ ! -d "v2.7.0/.west" ]; then
-                west init -m https://github.com/nrfconnect/sdk-nrf --mr v2.7.0 v2.7.0
-              fi
-              cd v2.7.0
-              west update -o=--depth=1 -n
-              west blobs fetch hal_nordic
-              west zephyr-export
-              pip install --user -r zephyr/scripts/requirements.txt
-              west build -b seeed_xiao_nrf52840_sense --pristine always ../devkit -- \
-                -DNCS_TOOLCHAIN_VERSION="NONE" \
-                -DCONF_FILE="prj_xiao_ble_sense_devkitv2-adafruit.conf" \
-                -DDTC_OVERLAY_FILE="/omi/firmware/devkit/overlay/xiao_ble_sense_devkitv2-adafruit.overlay" \
-                -DCMAKE_BUILD_TYPE="Release"
-              mkdir -p /omi/firmware/build/ci_build
-              cp build/zephyr/zephyr.uf2 /omi/firmware/build/ci_build/
-            '
+          set -euo pipefail
+          cd "${FIRMWARE_DIR}/${NCS_VERSION}"
+          west build -b "${BOARD}" --pristine always ../devkit -- \
+            -DNCS_TOOLCHAIN_VERSION="NONE" \
+            -DCONF_FILE="prj_xiao_ble_sense_devkitv2-adafruit.conf" \
+            -DDTC_OVERLAY_FILE="${GITHUB_WORKSPACE}/${FIRMWARE_DIR}/devkit/overlay/xiao_ble_sense_devkitv2-adafruit.overlay" \
+            -DCMAKE_BUILD_TYPE="Release"
+          mkdir -p "${GITHUB_WORKSPACE}/${FIRMWARE_DIR}/build/ci_build"
+          cp build/zephyr/zephyr.uf2 "${GITHUB_WORKSPACE}/${FIRMWARE_DIR}/build/ci_build/"
+
+      - name: Aggressive cleanup
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${FIRMWARE_DIR}/${NCS_VERSION}/build"
+          rm -rf "${FIRMWARE_DIR}/${NCS_VERSION}/.west" || true
+          rm -rf "${HOME}/.cache/pip" || true
+          rm -rf "${ZEPHYR_SDK_INSTALL_DIR}" || true
+          sudo rm -rf /opt/ghc /usr/share/dotnet /usr/local/lib/android || true
 
       - name: Upload UF2 artifact
         uses: actions/upload-artifact@v4

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifndef __BATTERY_H__
@@ -48,6 +49,15 @@ int battery_charge_start(void);
  * @note: want to stop charging to save power during runtime (Disables LED).
  */
 int battery_charge_stop(void);
+
+/**
+ * @brief Get whether charging is currently enabled by firmware.
+ *
+ * @param[out] is_enabled true when charger enable line is active.
+ *
+ * @retval 0 if successful. Negative errno number on error.
+ */
+int battery_is_charge_enabled(bool *is_enabled);
 
 /**
  * @brief Calculates the battery voltage using the ADC.

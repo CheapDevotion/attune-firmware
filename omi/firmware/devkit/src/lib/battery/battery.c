@@ -138,6 +138,21 @@ int battery_charge_stop()
     return gpio_pin_set(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE, 0);
 }
 
+int battery_is_charge_enabled(bool *is_enabled)
+{
+    if (!is_initialized || is_enabled == NULL) {
+        return -ECANCELED;
+    }
+
+    int value = gpio_pin_get(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE);
+    if (value < 0) {
+        return value;
+    }
+
+    *is_enabled = value > 0;
+    return 0;
+}
+
 int battery_get_millivolt(uint16_t *battery_millivolt)
 {
 

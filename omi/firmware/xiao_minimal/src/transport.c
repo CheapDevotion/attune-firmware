@@ -1,19 +1,26 @@
 #include "transport.h"
 
+#include <errno.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/services/bas.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/ring_buffer.h>
 
 #include "button.h"
 #include "codec.h"
 #include "config.h"
+#include "lib/battery/battery.h"
+#include "mic.h"
+#include "usb.h"
 #include "utils.h"
 
 LOG_MODULE_REGISTER(transport, CONFIG_LOG_DEFAULT_LEVEL);
 
 extern bool is_connected;
+extern bool is_off;
+extern bool usb_charge;
 
 struct bt_conn *current_connection = NULL;
 uint16_t current_mtu = 0;
@@ -43,12 +50,46 @@ static ssize_t audio_codec_read_characteristic(struct bt_conn *conn,
     return bt_gatt_attr_read(conn, attr, buf, len, offset, value, sizeof(value));
 }
 
+enum {
+    AUDIO_CTRL_CMD_PAUSE_STREAM = 0x01,
+    AUDIO_CTRL_CMD_RESUME_STREAM = 0x02,
+    AUDIO_CTRL_CMD_ENTER_DEEP_SLEEP = 0x03,
+    AUDIO_CTRL_CMD_NOTIFY_STATUS = 0x04,
+};
+
+enum {
+    AUDIO_STATUS_FLAG_USB_POWER = 1 << 0,
+    AUDIO_STATUS_FLAG_CHARGING_ENABLED = 1 << 1,
+    AUDIO_STATUS_FLAG_STREAM_PAUSED = 1 << 2,
+};
+
+static volatile bool stream_paused = false;
+
+static ssize_t audio_control_write_characteristic(struct bt_conn *conn,
+                                                  const struct bt_gatt_attr *attr,
+                                                  const void *buf,
+                                                  uint16_t len,
+                                                  uint16_t offset,
+                                                  uint8_t flags);
+static ssize_t audio_status_read_characteristic(struct bt_conn *conn,
+                                                const struct bt_gatt_attr *attr,
+                                                void *buf,
+                                                uint16_t len,
+                                                uint16_t offset);
+static void audio_status_ccc_config_changed_handler(const struct bt_gatt_attr *attr, uint16_t value);
+static void audio_notify_status(struct bt_conn *conn);
+static void audio_build_status_payload(uint8_t payload[5]);
+
 static struct bt_uuid_128 audio_service_uuid =
     BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x19B10000, 0xE8F2, 0x537E, 0x4F6C, 0xD104768A1214));
 static struct bt_uuid_128 audio_characteristic_data_uuid =
     BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x19B10001, 0xE8F2, 0x537E, 0x4F6C, 0xD104768A1214));
 static struct bt_uuid_128 audio_characteristic_format_uuid =
     BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x19B10002, 0xE8F2, 0x537E, 0x4F6C, 0xD104768A1214));
+static struct bt_uuid_128 audio_characteristic_control_uuid =
+    BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x19B10004, 0xE8F2, 0x537E, 0x4F6C, 0xD104768A1214));
+static struct bt_uuid_128 audio_characteristic_status_uuid =
+    BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x19B10005, 0xE8F2, 0x537E, 0x4F6C, 0xD104768A1214));
 
 static struct bt_gatt_attr audio_service_attr[] = {
     BT_GATT_PRIMARY_SERVICE(&audio_service_uuid),
@@ -65,6 +106,19 @@ static struct bt_gatt_attr audio_service_attr[] = {
                            audio_codec_read_characteristic,
                            NULL,
                            NULL),
+    BT_GATT_CHARACTERISTIC(&audio_characteristic_control_uuid.uuid,
+                           BT_GATT_CHRC_WRITE | BT_GATT_CHRC_WRITE_WITHOUT_RESP,
+                           BT_GATT_PERM_WRITE,
+                           NULL,
+                           audio_control_write_characteristic,
+                           NULL),
+    BT_GATT_CHARACTERISTIC(&audio_characteristic_status_uuid.uuid,
+                           BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
+                           BT_GATT_PERM_READ,
+                           audio_status_read_characteristic,
+                           NULL,
+                           NULL),
+    BT_GATT_CCC(audio_status_ccc_config_changed_handler, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
 };
 
 static struct bt_gatt_service audio_service = BT_GATT_SERVICE(audio_service_attr);
@@ -143,7 +197,9 @@ static void _transport_connected(struct bt_conn *conn, uint8_t err)
     }
     current_connection = bt_conn_ref(conn);
     current_mtu = info.le.data_len->tx_max_len;
+    stream_paused = false;
     is_connected = true;
+    audio_notify_status(conn);
 }
 
 static void _transport_disconnected(struct bt_conn *conn, uint8_t reason)
@@ -205,6 +261,115 @@ static bool read_from_tx_queue(void)
     return true;
 }
 
+static void audio_status_ccc_config_changed_handler(const struct bt_gatt_attr *attr, uint16_t value)
+{
+    ARG_UNUSED(attr);
+    ARG_UNUSED(value);
+}
+
+static void audio_build_status_payload(uint8_t payload[5])
+{
+    uint16_t battery_millivolt = 0;
+    uint8_t battery_percent = 0xFF;
+    bool charge_enabled = false;
+    uint8_t flags = 0;
+
+    if (usb_charge) {
+        flags |= AUDIO_STATUS_FLAG_USB_POWER;
+    }
+    if (stream_paused) {
+        flags |= AUDIO_STATUS_FLAG_STREAM_PAUSED;
+    }
+
+#ifdef CONFIG_OMI_ENABLE_BATTERY
+    if (battery_get_millivolt(&battery_millivolt) == 0) {
+        (void)battery_get_percentage(&battery_percent, battery_millivolt);
+    }
+    if (battery_is_charge_enabled(&charge_enabled) == 0 && charge_enabled) {
+        flags |= AUDIO_STATUS_FLAG_CHARGING_ENABLED;
+    }
+#else
+    ARG_UNUSED(charge_enabled);
+#endif
+
+    payload[0] = 1; // payload version
+    payload[1] = flags;
+    payload[2] = battery_percent;
+    payload[3] = (uint8_t)(battery_millivolt & 0xFF);
+    payload[4] = (uint8_t)((battery_millivolt >> 8) & 0xFF);
+}
+
+static void audio_notify_status(struct bt_conn *conn)
+{
+    uint8_t payload[5] = {0};
+    audio_build_status_payload(payload);
+
+    int err = bt_gatt_notify_uuid(conn, &audio_characteristic_status_uuid.uuid, audio_service.attrs, payload, sizeof(payload));
+    if (err && err != -ENOTCONN) {
+        LOG_DBG("Audio status notify failed: %d", err);
+    }
+}
+
+static ssize_t audio_status_read_characteristic(struct bt_conn *conn,
+                                                const struct bt_gatt_attr *attr,
+                                                void *buf,
+                                                uint16_t len,
+                                                uint16_t offset)
+{
+    uint8_t payload[5] = {0};
+    audio_build_status_payload(payload);
+    return bt_gatt_attr_read(conn, attr, buf, len, offset, payload, sizeof(payload));
+}
+
+static ssize_t audio_control_write_characteristic(struct bt_conn *conn,
+                                                  const struct bt_gatt_attr *attr,
+                                                  const void *buf,
+                                                  uint16_t len,
+                                                  uint16_t offset,
+                                                  uint8_t flags)
+{
+    ARG_UNUSED(attr);
+    ARG_UNUSED(offset);
+    ARG_UNUSED(flags);
+
+    if (buf == NULL || len < 1) {
+        return 0;
+    }
+
+    const uint8_t cmd = ((const uint8_t *)buf)[0];
+    switch (cmd) {
+    case AUDIO_CTRL_CMD_PAUSE_STREAM:
+        stream_paused = true;
+        ring_buf_reset(&ring_buf);
+        mic_off();
+        LOG_INF("Audio stream paused");
+        audio_notify_status(conn);
+        break;
+    case AUDIO_CTRL_CMD_RESUME_STREAM:
+        mic_on();
+        stream_paused = false;
+        LOG_INF("Audio stream resumed");
+        audio_notify_status(conn);
+        break;
+    case AUDIO_CTRL_CMD_ENTER_DEEP_SLEEP:
+        LOG_INF("Deep sleep command received");
+        stream_paused = true;
+        audio_notify_status(conn);
+        is_off = true;
+        bt_off();
+        turnoff_all();
+        break;
+    case AUDIO_CTRL_CMD_NOTIFY_STATUS:
+        audio_notify_status(conn);
+        break;
+    default:
+        LOG_WRN("Unknown audio control command: 0x%02X", cmd);
+        break;
+    }
+
+    return len;
+}
+
 K_THREAD_STACK_DEFINE(pusher_stack, 2048);
 static struct k_thread pusher_thread;
 
@@ -219,7 +384,9 @@ void pusher(void)
         if (conn && current_mtu >= MINIMAL_PACKET_SIZE &&
             bt_gatt_is_subscribed(conn, &audio_service.attrs[1], BT_GATT_CCC_NOTIFY)) {
 
-            if (read_from_tx_queue()) {
+            if (stream_paused) {
+                k_sleep(K_MSEC(5));
+            } else if (read_from_tx_queue()) {
                 uint8_t *buffer = tx_buffer + RING_BUFFER_HEADER_SIZE;
                 uint32_t offset = 0;
                 uint8_t index = 0;
@@ -291,6 +458,10 @@ int transport_start(void)
 
 int broadcast_audio_packets(uint8_t *buffer, size_t size)
 {
+    if (stream_paused) {
+        return 0;
+    }
+
     int retry_count = 0;
     while (retry_count < 3 && !write_to_tx_queue(buffer, size)) {
         k_sleep(K_MSEC(1));
@@ -314,6 +485,7 @@ int bt_off(void)
 
     (void)bt_le_adv_stop();
     (void)bt_disable();
+    stream_paused = false;
     is_connected = false;
     current_mtu = 0;
     return 0;
@@ -326,6 +498,7 @@ int bt_on(void)
         return err;
     }
 
+    stream_paused = false;
     return bt_le_adv_start(BT_LE_ADV_CONN, bt_ad, ARRAY_SIZE(bt_ad), bt_sd, ARRAY_SIZE(bt_sd));
 }
 

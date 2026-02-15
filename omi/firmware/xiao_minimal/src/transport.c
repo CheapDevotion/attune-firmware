@@ -198,6 +198,7 @@ static void _transport_connected(struct bt_conn *conn, uint8_t err)
     current_connection = bt_conn_ref(conn);
     current_mtu = info.le.data_len->tx_max_len;
     stream_paused = false;
+    mic_on();
     is_connected = true;
     audio_notify_status(conn);
 }
@@ -499,6 +500,7 @@ int bt_on(void)
     }
 
     stream_paused = false;
+    mic_on();
     return bt_le_adv_start(BT_LE_ADV_CONN, bt_ad, ARRAY_SIZE(bt_ad), bt_sd, ARRAY_SIZE(bt_sd));
 }
 

@@ -53,8 +53,10 @@ void mic_set_gain_level(uint8_t gain_level)
 
 #ifdef NRF_PDM0_S
     nrf_pdm_gain_set(NRF_PDM0_S, hw_gain, hw_gain);
-#else
+#elif defined(NRF_PDM0_NS)
     nrf_pdm_gain_set(NRF_PDM0_NS, hw_gain, hw_gain);
+#else
+    nrf_pdm_gain_set(NRF_PDM0, hw_gain, hw_gain);
 #endif
 
     LOG_INF("Mic gain set level=%u hw=0x%02x", _mic_gain_level, hw_gain);

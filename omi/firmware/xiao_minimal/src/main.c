@@ -40,12 +40,16 @@ static void apply_mic_agc(int16_t *buffer, size_t sample_count)
     }
 
     int64_t sum_abs = 0;
+    int32_t peak_abs = 0;
     for (size_t i = 0; i < sample_count; i++) {
         int32_t sample = buffer[i];
         if (sample < 0) {
             sample = -sample;
         }
         sum_abs += sample;
+        if (sample > peak_abs) {
+            peak_abs = sample;
+        }
     }
 
     int32_t avg_abs = (int32_t)(sum_abs / (int64_t) sample_count);
@@ -57,6 +61,17 @@ static void apply_mic_agc(int16_t *buffer, size_t sample_count)
         }
         if (desired_gain_q10 > MIC_AGC_MAX_GAIN_Q10) {
             desired_gain_q10 = MIC_AGC_MAX_GAIN_Q10;
+        }
+    }
+
+    // Peak-aware limiter: leave headroom to avoid clipping after AGC.
+    if (peak_abs > 0) {
+        int32_t max_gain_from_peak = (30000 * 1024) / peak_abs;
+        if (max_gain_from_peak < 1024) {
+            max_gain_from_peak = 1024;
+        }
+        if (desired_gain_q10 > max_gain_from_peak) {
+            desired_gain_q10 = max_gain_from_peak;
         }
     }
 
@@ -75,7 +90,7 @@ static void apply_mic_agc(int16_t *buffer, size_t sample_count)
 
     mic_agc_frame_count++;
     if (mic_agc_frame_count % 50 == 0) {
-        LOG_INF("MIC AGC avg_abs=%d gain_q10=%d", avg_abs, mic_agc_gain_q10);
+        LOG_INF("MIC AGC avg_abs=%d peak=%d gain_q10=%d", avg_abs, peak_abs, mic_agc_gain_q10);
     }
 #else
     ARG_UNUSED(buffer);

@@ -1,7 +1,7 @@
 #include <haly/nrfy_gpio.h>
 
 // #define SAMPLE_RATE 16000
-#define MIC_GAIN 80
+#define MIC_GAIN 64
 #define MIC_IRC_PRIORITY 7
 #define MIC_BUFFER_SAMPLES 1600    // 100ms
 #define AUDIO_BUFFER_SAMPLES 16000 // 1s
@@ -10,11 +10,11 @@
 
 // Simple firmware-side AGC for far-field speech pickup.
 #define MIC_AGC_ENABLED 1
-#define MIC_AGC_TARGET_AVG_ABS 7000
-#define MIC_AGC_MIN_AVG_ABS 40
-#define MIC_AGC_MAX_GAIN_Q10 (6 * 1024)
-#define MIC_AGC_ATTACK_PERCENT 35
-#define MIC_AGC_RELEASE_PERCENT 8
+#define MIC_AGC_TARGET_AVG_ABS 2200
+#define MIC_AGC_MIN_AVG_ABS 180
+#define MIC_AGC_MAX_GAIN_Q10 (3 * 1024)
+#define MIC_AGC_ATTACK_PERCENT 12
+#define MIC_AGC_RELEASE_PERCENT 35
 
 // PIN definitions
 // https://github.com/Seeed-Studio/Adafruit_nRF52_Arduino/blob/5aa3573913449410fd60f76b75673c53855ff2ec/variants/Seeed_XIAO_nRF52840_Sense/variant.cpp#L34

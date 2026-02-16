@@ -50,6 +50,38 @@ static ssize_t audio_codec_read_characteristic(struct bt_conn *conn,
     return bt_gatt_attr_read(conn, attr, buf, len, offset, value, sizeof(value));
 }
 
+static ssize_t audio_mic_gain_read_characteristic(struct bt_conn *conn,
+                                                  const struct bt_gatt_attr *attr,
+                                                  void *buf,
+                                                  uint16_t len,
+                                                  uint16_t offset)
+{
+    ARG_UNUSED(attr);
+    const uint8_t level = mic_get_gain_level();
+    return bt_gatt_attr_read(conn, attr, buf, len, offset, &level, sizeof(level));
+}
+
+static ssize_t audio_mic_gain_write_characteristic(struct bt_conn *conn,
+                                                   const struct bt_gatt_attr *attr,
+                                                   const void *buf,
+                                                   uint16_t len,
+                                                   uint16_t offset,
+                                                   uint8_t flags)
+{
+    ARG_UNUSED(conn);
+    ARG_UNUSED(attr);
+    ARG_UNUSED(offset);
+    ARG_UNUSED(flags);
+
+    if (buf == NULL || len < 1) {
+        return 0;
+    }
+
+    const uint8_t requested = ((const uint8_t *)buf)[0];
+    mic_set_gain_level(requested);
+    return len;
+}
+
 enum {
     AUDIO_CTRL_CMD_PAUSE_STREAM = 0x01,
     AUDIO_CTRL_CMD_RESUME_STREAM = 0x02,
@@ -86,6 +118,8 @@ static struct bt_uuid_128 audio_characteristic_data_uuid =
     BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x19B10001, 0xE8F2, 0x537E, 0x4F6C, 0xD104768A1214));
 static struct bt_uuid_128 audio_characteristic_format_uuid =
     BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x19B10002, 0xE8F2, 0x537E, 0x4F6C, 0xD104768A1214));
+static struct bt_uuid_128 audio_characteristic_mic_gain_uuid =
+    BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x19B10003, 0xE8F2, 0x537E, 0x4F6C, 0xD104768A1214));
 static struct bt_uuid_128 audio_characteristic_control_uuid =
     BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x19B10004, 0xE8F2, 0x537E, 0x4F6C, 0xD104768A1214));
 static struct bt_uuid_128 audio_characteristic_status_uuid =
@@ -105,6 +139,12 @@ static struct bt_gatt_attr audio_service_attr[] = {
                            BT_GATT_PERM_READ,
                            audio_codec_read_characteristic,
                            NULL,
+                           NULL),
+    BT_GATT_CHARACTERISTIC(&audio_characteristic_mic_gain_uuid.uuid,
+                           BT_GATT_CHRC_READ | BT_GATT_CHRC_WRITE | BT_GATT_CHRC_WRITE_WITHOUT_RESP,
+                           BT_GATT_PERM_READ | BT_GATT_PERM_WRITE,
+                           audio_mic_gain_read_characteristic,
+                           audio_mic_gain_write_characteristic,
                            NULL),
     BT_GATT_CHARACTERISTIC(&audio_characteristic_control_uuid.uuid,
                            BT_GATT_CHRC_WRITE | BT_GATT_CHRC_WRITE_WITHOUT_RESP,

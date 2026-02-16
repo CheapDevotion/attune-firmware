@@ -1,15 +1,17 @@
 #include <haly/nrfy_gpio.h>
 
 // #define SAMPLE_RATE 16000
-#define MIC_GAIN 64
 #define MIC_IRC_PRIORITY 7
 #define MIC_BUFFER_SAMPLES 1600    // 100ms
 #define AUDIO_BUFFER_SAMPLES 16000 // 1s
 #define NETWORK_RING_BUF_SIZE 32   // number of frames * CODEC_OUTPUT_MAX_BYTES
 #define MINIMAL_PACKET_SIZE 100    // Less than that doesn't make sence to send anything at all
 
-// Simple firmware-side AGC for far-field speech pickup.
-#define MIC_AGC_ENABLED 1
+// Omi-style discrete mic gain levels (0..8).
+#define MIC_GAIN_DEFAULT_LEVEL 6
+
+// Omi-style capture path: fixed mic gain level, no firmware AGC.
+#define MIC_AGC_ENABLED 0
 #define MIC_AGC_TARGET_AVG_ABS 2200
 #define MIC_AGC_MIN_AVG_ABS 180
 #define MIC_AGC_MAX_GAIN_Q10 (3 * 1024)

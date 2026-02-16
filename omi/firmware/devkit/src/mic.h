@@ -15,6 +15,8 @@ typedef void (*mix_handler)(int16_t *);
  */
 int mic_start();
 void set_mic_callback(mix_handler _callback);
+void mic_set_gain_level(uint8_t gain_level);
+uint8_t mic_get_gain_level(void);
 
 void mic_off();
 void mic_on();

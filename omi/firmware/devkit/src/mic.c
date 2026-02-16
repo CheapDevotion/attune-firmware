@@ -22,6 +22,48 @@ static int16_t _buffer_0[MIC_BUFFER_SAMPLES];
 static int16_t _buffer_1[MIC_BUFFER_SAMPLES];
 static volatile uint8_t _next_buffer_index = 0;
 static volatile mix_handler _callback = NULL;
+static uint8_t _mic_gain_level = MIC_GAIN_DEFAULT_LEVEL;
+
+static uint8_t clamp_mic_gain_level(uint8_t gain_level)
+{
+    return gain_level > 8 ? 8 : gain_level;
+}
+
+static uint8_t mic_gain_level_to_hw(uint8_t gain_level)
+{
+    // Omi gain mapping: 0..8 => mute, -20, -10, 0, +6, +10, +20, +30, +40 dB
+    static const uint8_t gain_map[9] = {
+        0x00, // 0
+        0x14, // 1
+        0x1E, // 2
+        0x28, // 3
+        0x2E, // 4
+        0x32, // 5
+        0x3C, // 6 (default)
+        0x46, // 7
+        0x50  // 8
+    };
+    return gain_map[clamp_mic_gain_level(gain_level)];
+}
+
+void mic_set_gain_level(uint8_t gain_level)
+{
+    _mic_gain_level = clamp_mic_gain_level(gain_level);
+    const uint8_t hw_gain = mic_gain_level_to_hw(_mic_gain_level);
+
+#ifdef NRF_PDM0_S
+    nrf_pdm_gain_set(NRF_PDM0_S, hw_gain, hw_gain);
+#else
+    nrf_pdm_gain_set(NRF_PDM0_NS, hw_gain, hw_gain);
+#endif
+
+    LOG_INF("Mic gain set level=%u hw=0x%02x", _mic_gain_level, hw_gain);
+}
+
+uint8_t mic_get_gain_level(void)
+{
+    return _mic_gain_level;
+}
 
 static void pdm_irq_handler(nrfx_pdm_evt_t const *event)
 {
@@ -62,8 +104,9 @@ int mic_start()
 
     // Configure PDM
     nrfx_pdm_config_t pdm_config = NRFX_PDM_DEFAULT_CONFIG(PDM_CLK_PIN, PDM_DIN_PIN);
-    pdm_config.gain_l = MIC_GAIN;
-    pdm_config.gain_r = MIC_GAIN;
+    const uint8_t initial_hw_gain = mic_gain_level_to_hw(_mic_gain_level);
+    pdm_config.gain_l = initial_hw_gain;
+    pdm_config.gain_r = initial_hw_gain;
     pdm_config.interrupt_priority = MIC_IRC_PRIORITY;
     pdm_config.clock_freq = NRF_PDM_FREQ_1280K;
     pdm_config.mode = NRF_PDM_MODE_MONO;
@@ -84,6 +127,9 @@ int mic_start()
         LOG_ERR("Audio unable to start PDM");
         return -1;
     }
+
+    // Re-apply selected gain after start.
+    mic_set_gain_level(_mic_gain_level);
 
     LOG_INF("Audio microphone started");
     return 0;

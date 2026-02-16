@@ -29,9 +29,41 @@ static const struct device *adc_battery_dev = DEVICE_DT_GET(DT_NODELABEL(adc));
 
 static K_MUTEX_DEFINE(battery_mut);
 
+#ifdef CONFIG_OMI_BATTERY_GPIO_CHARGE_SPEED_PIN
+#define GPIO_BATTERY_CHARGE_SPEED CONFIG_OMI_BATTERY_GPIO_CHARGE_SPEED_PIN
+#else
 #define GPIO_BATTERY_CHARGE_SPEED 13
+#endif
+
+#ifdef CONFIG_OMI_BATTERY_GPIO_CHARGING_ENABLE_PIN
+#define GPIO_BATTERY_CHARGING_ENABLE CONFIG_OMI_BATTERY_GPIO_CHARGING_ENABLE_PIN
+#else
 #define GPIO_BATTERY_CHARGING_ENABLE 17
+#endif
+
+#ifdef CONFIG_OMI_BATTERY_GPIO_READ_ENABLE_PIN
+#define GPIO_BATTERY_READ_ENABLE CONFIG_OMI_BATTERY_GPIO_READ_ENABLE_PIN
+#else
 #define GPIO_BATTERY_READ_ENABLE 14
+#endif
+
+#ifdef CONFIG_OMI_BATTERY_CHARGING_ENABLE_ACTIVE_LOW
+#define GPIO_BATTERY_CHARGING_ENABLE_FLAGS (GPIO_OUTPUT | GPIO_ACTIVE_LOW)
+#else
+#define GPIO_BATTERY_CHARGING_ENABLE_FLAGS (GPIO_OUTPUT)
+#endif
+
+#ifdef CONFIG_OMI_BATTERY_READ_ENABLE_ACTIVE_LOW
+#define GPIO_BATTERY_READ_ENABLE_FLAGS (GPIO_OUTPUT | GPIO_ACTIVE_LOW)
+#else
+#define GPIO_BATTERY_READ_ENABLE_FLAGS (GPIO_OUTPUT)
+#endif
+
+#ifdef CONFIG_OMI_BATTERY_CHARGE_SPEED_ACTIVE_LOW
+#define GPIO_BATTERY_CHARGE_SPEED_FLAGS (GPIO_OUTPUT | GPIO_ACTIVE_LOW)
+#else
+#define GPIO_BATTERY_CHARGE_SPEED_FLAGS (GPIO_OUTPUT)
+#endif
 
 // Change this to a higher number for better averages
 // Note that increasing this holds up the thread / ADC for longer.
@@ -159,9 +191,9 @@ int battery_get_millivolt(uint16_t *battery_millivolt)
     int ret = 0;
 
     // Voltage divider circuit (Should tune R1 in software if possible)
-    const uint16_t R1 = 1037; // Originally 1M ohm, calibrated after measuring actual voltage values. Can happen due to
-                              // resistor tolerances, temperature ect..
-    const uint16_t R2 = 510;  // 510K ohm
+    const uint16_t R1 = CONFIG_OMI_BATTERY_ADC_R1_KOHM; // Originally 1M ohm, calibrated after measuring actual voltage values. Can happen due to
+                                                         // resistor tolerances, temperature ect..
+    const uint16_t R2 = CONFIG_OMI_BATTERY_ADC_R2_KOHM;  // 510K ohm
 
     // ADC measure
     uint16_t adc_vref = adc_ref_internal(adc_battery_dev);
@@ -244,9 +276,9 @@ int battery_init()
         return -EIO;
     }
 
-    ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE, GPIO_OUTPUT | GPIO_ACTIVE_LOW);
-    ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_READ_ENABLE, GPIO_OUTPUT | GPIO_ACTIVE_LOW);
-    ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_CHARGE_SPEED, GPIO_OUTPUT | GPIO_ACTIVE_LOW);
+    ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE, GPIO_BATTERY_CHARGING_ENABLE_FLAGS);
+    ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_READ_ENABLE, GPIO_BATTERY_READ_ENABLE_FLAGS);
+    ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_CHARGE_SPEED, GPIO_BATTERY_CHARGE_SPEED_FLAGS);
 
     if (ret) {
         LOG_ERR("GPIO configure failed!");
@@ -259,7 +291,10 @@ int battery_init()
     }
 
     is_initialized = true;
-    LOG_INF("Initialized");
+    LOG_INF("Initialized (pins: charge_speed=%d charge_enable=%d read_enable=%d)",
+            GPIO_BATTERY_CHARGE_SPEED,
+            GPIO_BATTERY_CHARGING_ENABLE,
+            GPIO_BATTERY_READ_ENABLE);
 
     ret |= battery_enable_read();
     ret |= battery_set_fast_charge();

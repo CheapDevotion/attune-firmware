@@ -15,15 +15,23 @@ bool usb_charge = false;
 
 usb_dc_status_callback udc_status_cb(enum usb_dc_status_code status, const uint8_t *param)
 {
+    ARG_UNUSED(param);
     switch (status) {
     case USB_DC_CONNECTED:
+    case USB_DC_CONFIGURED:
+    case USB_DC_RESUME:
+        usb_charge = true;
+        break;
+    case USB_DC_SUSPEND:
+        // Still physically connected to USB power.
         usb_charge = true;
         break;
     case USB_DC_DISCONNECTED:
         usb_charge = false;
         break;
     default:
-        usb_charge = true;
+        // Keep previous state for unhandled bus events.
+        break;
     }
 
     return;

@@ -40,6 +40,52 @@ config OMI_ENABLE_BATTERY
         Enable battery telemetry support.
     default y
 
+if OMI_ENABLE_BATTERY
+
+config OMI_BATTERY_GPIO_CHARGE_SPEED_PIN
+    int "Battery charge-speed GPIO pin"
+    default 13
+    help
+        GPIO pin index used for charger current selection.
+
+config OMI_BATTERY_GPIO_CHARGING_ENABLE_PIN
+    int "Battery charging-enable GPIO pin"
+    default 17
+    help
+        GPIO pin index used to enable the charger path.
+
+config OMI_BATTERY_GPIO_READ_ENABLE_PIN
+    int "Battery read-enable GPIO pin"
+    default 14
+    help
+        GPIO pin index used to enable battery voltage read circuitry.
+
+config OMI_BATTERY_CHARGE_SPEED_ACTIVE_LOW
+    bool "Charge-speed pin is active low"
+    default y
+
+config OMI_BATTERY_CHARGING_ENABLE_ACTIVE_LOW
+    bool "Charging-enable pin is active low"
+    default y
+
+config OMI_BATTERY_READ_ENABLE_ACTIVE_LOW
+    bool "Read-enable pin is active low"
+    default y
+
+config OMI_BATTERY_ADC_R1_KOHM
+    int "Battery divider R1 value (kOhm)"
+    default 1037
+    help
+        Top resistor value for battery divider calibration.
+
+config OMI_BATTERY_ADC_R2_KOHM
+    int "Battery divider R2 value (kOhm)"
+    default 510
+    help
+        Bottom resistor value for battery divider calibration.
+
+endif
+
 config OMI_ENABLE_USB
     bool "Enable USB support"
     help

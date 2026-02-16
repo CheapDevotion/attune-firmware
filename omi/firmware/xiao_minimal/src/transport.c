@@ -7,6 +7,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/ring_buffer.h>
+#include <zephyr/sys/util.h>
 
 #include "button.h"
 #include "codec.h"
@@ -96,6 +97,55 @@ enum {
 };
 
 static volatile bool stream_paused = false;
+static bool battery_filter_initialized = false;
+static uint16_t battery_filtered_mv = 0;
+static uint8_t battery_filtered_percent = 0xFF;
+static int64_t battery_last_update_ms = 0;
+
+static uint8_t stabilize_battery_percent(uint8_t raw_percent, uint16_t raw_mv)
+{
+    if (raw_percent == 0xFF) {
+        return battery_filter_initialized ? battery_filtered_percent : raw_percent;
+    }
+
+    const int64_t now_ms = k_uptime_get();
+    if (!battery_filter_initialized) {
+        battery_filter_initialized = true;
+        battery_filtered_mv = raw_mv;
+        battery_filtered_percent = raw_percent;
+        battery_last_update_ms = now_ms;
+        return battery_filtered_percent;
+    }
+
+    if (raw_mv > 0) {
+        // Exponential moving average to reduce load-induced voltage swings.
+        battery_filtered_mv = (uint16_t)(((uint32_t)battery_filtered_mv * 7U + raw_mv) / 8U);
+    }
+
+    uint8_t candidate = raw_percent;
+    if (battery_filtered_mv > 0) {
+        (void)battery_get_percentage(&candidate, battery_filtered_mv);
+    }
+
+    int elapsed_s = (int)((now_ms - battery_last_update_ms) / 1000);
+    if (elapsed_s < 1) {
+        elapsed_s = 1;
+    }
+
+    const int prev = (int)battery_filtered_percent;
+    const int max_rise = MIN(24, 2 + elapsed_s);
+    const int max_fall = MIN(28, 3 + (elapsed_s * 2));
+    int delta = (int)candidate - prev;
+    if (delta > max_rise) {
+        candidate = (uint8_t)(prev + max_rise);
+    } else if (-delta > max_fall) {
+        candidate = (uint8_t)(prev - max_fall);
+    }
+
+    battery_filtered_percent = candidate;
+    battery_last_update_ms = now_ms;
+    return battery_filtered_percent;
+}
 
 static ssize_t audio_control_write_characteristic(struct bt_conn *conn,
                                                   const struct bt_gatt_attr *attr,
@@ -325,6 +375,7 @@ static void audio_build_status_payload(uint8_t payload[5])
 #ifdef CONFIG_OMI_ENABLE_BATTERY
     if (battery_get_millivolt(&battery_millivolt) == 0) {
         (void)battery_get_percentage(&battery_percent, battery_millivolt);
+        battery_percent = stabilize_battery_percent(battery_percent, battery_millivolt);
     }
     if (battery_is_charge_enabled(&charge_enabled) == 0 && charge_enabled) {
         flags |= AUDIO_STATUS_FLAG_CHARGING_ENABLED;

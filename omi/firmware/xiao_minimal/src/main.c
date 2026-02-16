@@ -17,6 +17,8 @@ bool is_connected = false;
 bool is_charging = false;
 extern bool is_off;
 extern bool usb_charge;
+static bool charger_state_initialized = false;
+static bool charger_enabled = false;
 
 static void codec_handler(uint8_t *data, size_t len)
 {
@@ -58,6 +60,26 @@ void set_led_state(void)
     }
 }
 
+static void apply_charger_policy(void)
+{
+#ifdef CONFIG_OMI_ENABLE_BATTERY
+    const bool should_charge = usb_charge;
+    if (charger_state_initialized && charger_enabled == should_charge) {
+        return;
+    }
+
+    const int err = should_charge ? battery_charge_start() : battery_charge_stop();
+    if (err) {
+        LOG_WRN("Battery charge policy update failed (usb=%d, err=%d)", should_charge, err);
+        return;
+    }
+
+    charger_state_initialized = true;
+    charger_enabled = should_charge;
+    LOG_INF("Battery charger %s (usb=%d)", should_charge ? "enabled" : "disabled", usb_charge);
+#endif
+}
+
 int main(void)
 {
     int err;
@@ -83,11 +105,6 @@ int main(void)
         LOG_ERR("Battery init failed: %d", err);
         return err;
     }
-    err = battery_charge_start();
-    if (err) {
-        LOG_ERR("Battery charge init failed: %d", err);
-        return err;
-    }
 #endif
 
 #ifdef CONFIG_OMI_ENABLE_BUTTON
@@ -105,6 +122,10 @@ int main(void)
         LOG_ERR("USB init failed: %d", err);
         return err;
     }
+#endif
+
+#ifdef CONFIG_OMI_ENABLE_BATTERY
+    apply_charger_policy();
 #endif
 
     err = transport_start();
@@ -131,6 +152,7 @@ int main(void)
 
     while (1) {
         watchdog_feed();
+        apply_charger_policy();
         set_led_state();
         k_msleep(500);
     }

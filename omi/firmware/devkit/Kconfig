@@ -43,6 +43,42 @@ config OMI_ENABLE_BATTERY
         "Enable the battery support."
     default n
 
+if OMI_ENABLE_BATTERY
+
+config OMI_BATTERY_GPIO_CHARGE_SPEED_PIN
+    int "Battery charge-speed GPIO pin"
+    default 13
+
+config OMI_BATTERY_GPIO_CHARGING_ENABLE_PIN
+    int "Battery charging-enable GPIO pin"
+    default 17
+
+config OMI_BATTERY_GPIO_READ_ENABLE_PIN
+    int "Battery read-enable GPIO pin"
+    default 14
+
+config OMI_BATTERY_CHARGE_SPEED_ACTIVE_LOW
+    bool "Charge-speed pin is active low"
+    default y
+
+config OMI_BATTERY_CHARGING_ENABLE_ACTIVE_LOW
+    bool "Charging-enable pin is active low"
+    default y
+
+config OMI_BATTERY_READ_ENABLE_ACTIVE_LOW
+    bool "Read-enable pin is active low"
+    default y
+
+config OMI_BATTERY_ADC_R1_KOHM
+    int "Battery divider R1 value (kOhm)"
+    default 1037
+
+config OMI_BATTERY_ADC_R2_KOHM
+    int "Battery divider R2 value (kOhm)"
+    default 510
+
+endif
+
 config OMI_ENABLE_USB
     bool "Enable the usb"
     help

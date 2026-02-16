@@ -18,6 +18,71 @@ bool is_charging = false;
 extern bool is_off;
 extern bool usb_charge;
 
+static int32_t mic_agc_gain_q10 = 1024;
+static uint32_t mic_agc_frame_count = 0;
+
+static int16_t clamp_pcm16(int32_t value)
+{
+    if (value > 32767) {
+        return 32767;
+    }
+    if (value < -32768) {
+        return -32768;
+    }
+    return (int16_t) value;
+}
+
+static void apply_mic_agc(int16_t *buffer, size_t sample_count)
+{
+#if MIC_AGC_ENABLED
+    if (buffer == NULL || sample_count == 0) {
+        return;
+    }
+
+    int64_t sum_abs = 0;
+    for (size_t i = 0; i < sample_count; i++) {
+        int32_t sample = buffer[i];
+        if (sample < 0) {
+            sample = -sample;
+        }
+        sum_abs += sample;
+    }
+
+    int32_t avg_abs = (int32_t)(sum_abs / (int64_t) sample_count);
+    int32_t desired_gain_q10 = 1024;
+    if (avg_abs >= MIC_AGC_MIN_AVG_ABS) {
+        desired_gain_q10 = (MIC_AGC_TARGET_AVG_ABS * 1024) / avg_abs;
+        if (desired_gain_q10 < 1024) {
+            desired_gain_q10 = 1024;
+        }
+        if (desired_gain_q10 > MIC_AGC_MAX_GAIN_Q10) {
+            desired_gain_q10 = MIC_AGC_MAX_GAIN_Q10;
+        }
+    }
+
+    int32_t delta = desired_gain_q10 - mic_agc_gain_q10;
+    int32_t step_percent = delta > 0 ? MIC_AGC_ATTACK_PERCENT : MIC_AGC_RELEASE_PERCENT;
+    int32_t step = (delta * step_percent) / 100;
+    if (step == 0 && delta != 0) {
+        step = delta > 0 ? 1 : -1;
+    }
+    mic_agc_gain_q10 += step;
+
+    for (size_t i = 0; i < sample_count; i++) {
+        int32_t scaled = ((int32_t) buffer[i] * mic_agc_gain_q10) >> 10;
+        buffer[i] = clamp_pcm16(scaled);
+    }
+
+    mic_agc_frame_count++;
+    if (mic_agc_frame_count % 50 == 0) {
+        LOG_INF("MIC AGC avg_abs=%d gain_q10=%d", avg_abs, mic_agc_gain_q10);
+    }
+#else
+    ARG_UNUSED(buffer);
+    ARG_UNUSED(sample_count);
+#endif
+}
+
 static void codec_handler(uint8_t *data, size_t len)
 {
     int err = broadcast_audio_packets(data, len);
@@ -28,6 +93,7 @@ static void codec_handler(uint8_t *data, size_t len)
 
 static void mic_handler(int16_t *buffer)
 {
+    apply_mic_agc(buffer, MIC_BUFFER_SAMPLES);
     int err = codec_receive_pcm(buffer, MIC_BUFFER_SAMPLES);
     if (err) {
         LOG_ERR("Failed to process PCM data: %d", err);

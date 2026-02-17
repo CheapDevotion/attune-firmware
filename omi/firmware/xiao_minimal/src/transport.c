@@ -101,6 +101,7 @@ static bool battery_filter_initialized = false;
 static uint16_t battery_filtered_mv = 0;
 static uint8_t battery_filtered_percent = 0xFF;
 static int64_t battery_last_update_ms = 0;
+static int64_t battery_diag_last_log_ms = 0;
 
 static uint8_t stabilize_battery_percent(uint8_t raw_percent, uint16_t raw_mv)
 {
@@ -362,7 +363,11 @@ static void audio_build_status_payload(uint8_t payload[5])
 {
     uint16_t battery_millivolt = 0;
     uint8_t battery_percent = 0xFF;
+    uint8_t battery_percent_raw = 0xFF;
     bool charge_enabled = false;
+    int battery_mv_err = -ENOTSUP;
+    int battery_percent_err = -ENOTSUP;
+    int battery_charge_err = -ENOTSUP;
     uint8_t flags = 0;
 
     if (usb_charge) {
@@ -373,11 +378,17 @@ static void audio_build_status_payload(uint8_t payload[5])
     }
 
 #ifdef CONFIG_OMI_ENABLE_BATTERY
-    if (battery_get_millivolt(&battery_millivolt) == 0) {
-        (void)battery_get_percentage(&battery_percent, battery_millivolt);
-        battery_percent = stabilize_battery_percent(battery_percent, battery_millivolt);
+    battery_mv_err = battery_get_millivolt(&battery_millivolt);
+    if (battery_mv_err == 0) {
+        battery_percent_err = battery_get_percentage(&battery_percent_raw, battery_millivolt);
+        if (battery_percent_err == 0) {
+            battery_percent = stabilize_battery_percent(battery_percent_raw, battery_millivolt);
+        } else {
+            battery_percent = battery_percent_raw;
+        }
     }
-    if (battery_is_charge_enabled(&charge_enabled) == 0 && charge_enabled) {
+    battery_charge_err = battery_is_charge_enabled(&charge_enabled);
+    if (battery_charge_err == 0 && charge_enabled) {
         flags |= AUDIO_STATUS_FLAG_CHARGING_ENABLED;
     }
 #else
@@ -389,6 +400,22 @@ static void audio_build_status_payload(uint8_t payload[5])
     payload[2] = battery_percent;
     payload[3] = (uint8_t)(battery_millivolt & 0xFF);
     payload[4] = (uint8_t)((battery_millivolt >> 8) & 0xFF);
+
+    const int64_t now_ms = k_uptime_get();
+    if ((now_ms - battery_diag_last_log_ms) >= 10000) {
+        battery_diag_last_log_ms = now_ms;
+        LOG_INF(
+            "Battery diag: mv=%u raw_pct=%u pct=%u usb=%d charging=%d paused=%d errs[mv=%d pct=%d chg=%d]",
+            battery_millivolt,
+            battery_percent_raw,
+            battery_percent,
+            usb_charge ? 1 : 0,
+            charge_enabled ? 1 : 0,
+            stream_paused ? 1 : 0,
+            battery_mv_err,
+            battery_percent_err,
+            battery_charge_err);
+    }
 }
 
 static void audio_notify_status(struct bt_conn *conn)

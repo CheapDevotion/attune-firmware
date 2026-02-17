@@ -10,7 +10,7 @@ typedef struct sensors {
     struct sensor_value g_x;
     struct sensor_value g_y;
     struct sensor_value g_z;
-};
+} sensors_t;
 /**
  * @brief Initialize the BLE transport logic
  *

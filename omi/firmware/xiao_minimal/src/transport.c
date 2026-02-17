@@ -593,7 +593,24 @@ int transport_start(void)
 
 int broadcast_audio_packets(uint8_t *buffer, size_t size)
 {
-    if (stream_paused || !stream_notify_enabled || !is_connected) {
+    if (stream_paused || !is_connected) {
+        return 0;
+    }
+
+    bool subscribed = false;
+    struct bt_conn *conn = current_connection;
+    if (conn) {
+        conn = bt_conn_ref(conn);
+    }
+    if (conn && current_mtu >= MINIMAL_PACKET_SIZE) {
+        subscribed = bt_gatt_is_subscribed(conn, &audio_service.attrs[1], BT_GATT_CCC_NOTIFY);
+    }
+    if (conn) {
+        bt_conn_unref(conn);
+    }
+    if (!subscribed) {
+        stream_notify_enabled = false;
+        ring_buf_reset(&ring_buf);
         return 0;
     }
 

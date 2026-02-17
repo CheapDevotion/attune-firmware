@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -19,20 +20,38 @@ extern bool is_off;
 extern bool usb_charge;
 static bool charger_state_initialized = false;
 static bool charger_enabled = false;
+static int64_t last_codec_error_log_ms = 0;
+static int64_t last_battery_diag_log_ms = 0;
 
 static void codec_handler(uint8_t *data, size_t len)
 {
+    if (!is_connected) {
+        return;
+    }
+
     int err = broadcast_audio_packets(data, len);
     if (err) {
-        LOG_ERR("Failed to broadcast audio packets: %d", err);
+        const int64_t now_ms = k_uptime_get();
+        if ((now_ms - last_codec_error_log_ms) >= 1000) {
+            last_codec_error_log_ms = now_ms;
+            LOG_WRN("Audio packet broadcast backpressure (err=%d)", err);
+        }
     }
 }
 
 static void mic_handler(int16_t *buffer)
 {
+    if (!is_connected) {
+        return;
+    }
+
     int err = codec_receive_pcm(buffer, MIC_BUFFER_SAMPLES);
     if (err) {
-        LOG_ERR("Failed to process PCM data: %d", err);
+        const int64_t now_ms = k_uptime_get();
+        if ((now_ms - last_codec_error_log_ms) >= 1000) {
+            last_codec_error_log_ms = now_ms;
+            LOG_WRN("PCM ingest backpressure (err=%d)", err);
+        }
     }
 }
 
@@ -77,6 +96,35 @@ static void apply_charger_policy(void)
     charger_state_initialized = true;
     charger_enabled = should_charge;
     LOG_INF("Battery charger %s (usb=%d)", should_charge ? "enabled" : "disabled", usb_charge);
+#endif
+}
+
+static void log_battery_diagnostics(void)
+{
+#ifdef CONFIG_OMI_ENABLE_BATTERY
+    const int64_t now_ms = k_uptime_get();
+    if ((now_ms - last_battery_diag_log_ms) < 10000) {
+        return;
+    }
+    last_battery_diag_log_ms = now_ms;
+
+    uint16_t battery_millivolt = 0;
+    uint8_t battery_percent = 0xFF;
+    bool charging = false;
+    const int mv_err = battery_get_millivolt(&battery_millivolt);
+    const int pct_err = (mv_err == 0)
+        ? battery_get_percentage(&battery_percent, battery_millivolt)
+        : -ENOTSUP;
+    const int charge_err = battery_is_charge_enabled(&charging);
+
+    LOG_INF("Battery main diag: mv=%u pct=%u usb=%d charging=%d errs[mv=%d pct=%d chg=%d]",
+            battery_millivolt,
+            battery_percent,
+            usb_charge ? 1 : 0,
+            charging ? 1 : 0,
+            mv_err,
+            pct_err,
+            charge_err);
 #endif
 }
 
@@ -153,6 +201,7 @@ int main(void)
     while (1) {
         watchdog_feed();
         apply_charger_policy();
+        log_battery_diagnostics();
         set_led_state();
         k_msleep(500);
     }

@@ -26,11 +26,19 @@ extern bool usb_charge;
 struct bt_conn *current_connection = NULL;
 uint16_t current_mtu = 0;
 static struct ring_buf ring_buf;
+static volatile bool stream_paused = true;
+static volatile bool stream_notify_enabled = false;
 
 static void audio_ccc_config_changed_handler(const struct bt_gatt_attr *attr, uint16_t value)
 {
     ARG_UNUSED(attr);
-    ARG_UNUSED(value);
+    stream_notify_enabled = (value == BT_GATT_CCC_NOTIFY);
+    if (!stream_notify_enabled) {
+        ring_buf_reset(&ring_buf);
+        mic_off();
+    } else if (!stream_paused && is_connected) {
+        mic_on();
+    }
 }
 
 static ssize_t audio_data_read_characteristic(struct bt_conn *conn,
@@ -97,7 +105,6 @@ enum {
     AUDIO_STATUS_FLAG_STREAM_PAUSED = 1 << 2,
 };
 
-static volatile bool stream_paused = true;
 static bool battery_filter_initialized = false;
 static uint16_t battery_filtered_mv = 0;
 static uint8_t battery_filtered_percent = 0xFF;
@@ -289,8 +296,11 @@ static void _transport_connected(struct bt_conn *conn, uint8_t err)
     }
     current_connection = bt_conn_ref(conn);
     current_mtu = info.le.data_len->tx_max_len;
-    stream_paused = false;
-    mic_on();
+    if (!stream_paused && stream_notify_enabled) {
+        mic_on();
+    } else {
+        mic_off();
+    }
     is_connected = true;
     audio_notify_status(conn);
 }
@@ -301,6 +311,7 @@ static void _transport_disconnected(struct bt_conn *conn, uint8_t reason)
     ARG_UNUSED(reason);
     is_connected = false;
     stream_paused = true;
+    stream_notify_enabled = false;
     ring_buf_reset(&ring_buf);
     mic_off();
 
@@ -468,8 +479,10 @@ static ssize_t audio_control_write_characteristic(struct bt_conn *conn,
         audio_notify_status(conn);
         break;
     case AUDIO_CTRL_CMD_RESUME_STREAM:
-        mic_on();
         stream_paused = false;
+        if (stream_notify_enabled && is_connected) {
+            mic_on();
+        }
         LOG_INF("Audio stream resumed");
         audio_notify_status(conn);
         break;
@@ -580,7 +593,7 @@ int transport_start(void)
 
 int broadcast_audio_packets(uint8_t *buffer, size_t size)
 {
-    if (stream_paused) {
+    if (stream_paused || !stream_notify_enabled || !is_connected) {
         return 0;
     }
 
@@ -608,6 +621,7 @@ int bt_off(void)
     (void)bt_le_adv_stop();
     (void)bt_disable();
     stream_paused = true;
+    stream_notify_enabled = false;
     ring_buf_reset(&ring_buf);
     mic_off();
     is_connected = false;
@@ -622,8 +636,9 @@ int bt_on(void)
         return err;
     }
 
-    stream_paused = false;
-    mic_on();
+    stream_paused = true;
+    stream_notify_enabled = false;
+    mic_off();
     return bt_le_adv_start(BT_LE_ADV_CONN, bt_ad, ARRAY_SIZE(bt_ad), bt_sd, ARRAY_SIZE(bt_sd));
 }
 

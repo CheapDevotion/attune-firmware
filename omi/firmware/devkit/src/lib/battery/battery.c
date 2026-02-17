@@ -41,6 +41,12 @@ static K_MUTEX_DEFINE(battery_mut);
 #define GPIO_BATTERY_CHARGING_ENABLE 17
 #endif
 
+#ifdef CONFIG_OMI_BATTERY_GPIO_CHARGE_STATUS_PIN
+#define GPIO_BATTERY_CHARGE_STATUS CONFIG_OMI_BATTERY_GPIO_CHARGE_STATUS_PIN
+#else
+#define GPIO_BATTERY_CHARGE_STATUS -1
+#endif
+
 #ifdef CONFIG_OMI_BATTERY_GPIO_READ_ENABLE_PIN
 #define GPIO_BATTERY_READ_ENABLE CONFIG_OMI_BATTERY_GPIO_READ_ENABLE_PIN
 #else
@@ -51,6 +57,18 @@ static K_MUTEX_DEFINE(battery_mut);
 #define GPIO_BATTERY_CHARGING_ENABLE_FLAGS (GPIO_OUTPUT | GPIO_ACTIVE_LOW)
 #else
 #define GPIO_BATTERY_CHARGING_ENABLE_FLAGS (GPIO_OUTPUT)
+#endif
+
+#ifdef CONFIG_OMI_BATTERY_CHARGING_ENABLE_ACTIVE_LOW
+#define GPIO_BATTERY_CHARGING_ENABLE_ACTIVE_LOW 1
+#else
+#define GPIO_BATTERY_CHARGING_ENABLE_ACTIVE_LOW 0
+#endif
+
+#ifdef CONFIG_OMI_BATTERY_CHARGE_STATUS_ACTIVE_LOW
+#define GPIO_BATTERY_CHARGE_STATUS_ACTIVE_LOW 1
+#else
+#define GPIO_BATTERY_CHARGE_STATUS_ACTIVE_LOW 0
 #endif
 
 #ifdef CONFIG_OMI_BATTERY_READ_ENABLE_ACTIVE_LOW
@@ -64,6 +82,8 @@ static K_MUTEX_DEFINE(battery_mut);
 #else
 #define GPIO_BATTERY_CHARGE_SPEED_FLAGS (GPIO_OUTPUT)
 #endif
+
+#define GPIO_BATTERY_CHARGE_STATUS_FLAGS (GPIO_INPUT)
 
 // Change this to a higher number for better averages
 // Note that increasing this holds up the thread / ADC for longer.
@@ -128,6 +148,9 @@ static uint8_t is_initialized = false;
 
 static int battery_enable_read()
 {
+    if (GPIO_BATTERY_READ_ENABLE < 0) {
+        return 0;
+    }
     return gpio_pin_set(gpio_battery_dev, GPIO_BATTERY_READ_ENABLE, 1);
 }
 
@@ -137,6 +160,10 @@ int battery_set_fast_charge()
         return -ECANCELED;
     }
 
+    if (GPIO_BATTERY_CHARGE_SPEED < 0) {
+        return 0;
+    }
+
     return gpio_pin_set(gpio_battery_dev, GPIO_BATTERY_CHARGE_SPEED, 1); // FAST charge 100mA
 }
 
@@ -144,6 +171,10 @@ int battery_set_slow_charge()
 {
     if (!is_initialized) {
         return -ECANCELED;
+    }
+
+    if (GPIO_BATTERY_CHARGE_SPEED < 0) {
+        return 0;
     }
 
     return gpio_pin_set(gpio_battery_dev, GPIO_BATTERY_CHARGE_SPEED, 0); // SLOW charge 50mA
@@ -157,7 +188,9 @@ int battery_charge_start()
         return -ECANCELED;
     }
     ret |= battery_enable_read();
-    ret |= gpio_pin_set(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE, 1);
+    if (GPIO_BATTERY_CHARGING_ENABLE >= 0) {
+        ret |= gpio_pin_set(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE, 1);
+    }
     return ret;
 }
 
@@ -165,6 +198,10 @@ int battery_charge_stop()
 {
     if (!is_initialized) {
         return -ECANCELED;
+    }
+
+    if (GPIO_BATTERY_CHARGING_ENABLE < 0) {
+        return 0;
     }
 
     return gpio_pin_set(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE, 0);
@@ -176,12 +213,25 @@ int battery_is_charge_enabled(bool *is_enabled)
         return -ECANCELED;
     }
 
-    int value = gpio_pin_get(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE);
-    if (value < 0) {
-        return value;
+    if (GPIO_BATTERY_CHARGE_STATUS >= 0) {
+        int status = gpio_pin_get(gpio_battery_dev, GPIO_BATTERY_CHARGE_STATUS);
+        if (status < 0) {
+            return status;
+        }
+        *is_enabled = GPIO_BATTERY_CHARGE_STATUS_ACTIVE_LOW ? (status == 0) : (status > 0);
+        return 0;
     }
 
-    *is_enabled = value > 0;
+    if (GPIO_BATTERY_CHARGING_ENABLE >= 0) {
+        int value = gpio_pin_get(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE);
+        if (value < 0) {
+            return value;
+        }
+        *is_enabled = GPIO_BATTERY_CHARGING_ENABLE_ACTIVE_LOW ? (value == 0) : (value > 0);
+        return 0;
+    }
+
+    *is_enabled = false;
     return 0;
 }
 
@@ -276,9 +326,18 @@ int battery_init()
         return -EIO;
     }
 
-    ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE, GPIO_BATTERY_CHARGING_ENABLE_FLAGS);
-    ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_READ_ENABLE, GPIO_BATTERY_READ_ENABLE_FLAGS);
-    ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_CHARGE_SPEED, GPIO_BATTERY_CHARGE_SPEED_FLAGS);
+    if (GPIO_BATTERY_CHARGING_ENABLE >= 0) {
+        ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_CHARGING_ENABLE, GPIO_BATTERY_CHARGING_ENABLE_FLAGS);
+    }
+    if (GPIO_BATTERY_CHARGE_STATUS >= 0) {
+        ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_CHARGE_STATUS, GPIO_BATTERY_CHARGE_STATUS_FLAGS);
+    }
+    if (GPIO_BATTERY_READ_ENABLE >= 0) {
+        ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_READ_ENABLE, GPIO_BATTERY_READ_ENABLE_FLAGS);
+    }
+    if (GPIO_BATTERY_CHARGE_SPEED >= 0) {
+        ret |= gpio_pin_configure(gpio_battery_dev, GPIO_BATTERY_CHARGE_SPEED, GPIO_BATTERY_CHARGE_SPEED_FLAGS);
+    }
 
     if (ret) {
         LOG_ERR("GPIO configure failed!");
@@ -291,9 +350,10 @@ int battery_init()
     }
 
     is_initialized = true;
-    LOG_INF("Initialized (pins: charge_speed=%d charge_enable=%d read_enable=%d)",
+    LOG_INF("Initialized (pins: charge_speed=%d charge_enable=%d charge_status=%d read_enable=%d)",
             GPIO_BATTERY_CHARGE_SPEED,
             GPIO_BATTERY_CHARGING_ENABLE,
+            GPIO_BATTERY_CHARGE_STATUS,
             GPIO_BATTERY_READ_ENABLE);
 
     ret |= battery_enable_read();

@@ -53,6 +53,10 @@ config OMI_BATTERY_GPIO_CHARGING_ENABLE_PIN
     int "Battery charging-enable GPIO pin"
     default 17
 
+config OMI_BATTERY_GPIO_CHARGE_STATUS_PIN
+    int "Battery charge-status GPIO pin"
+    default -1
+
 config OMI_BATTERY_GPIO_READ_ENABLE_PIN
     int "Battery read-enable GPIO pin"
     default 14
@@ -63,6 +67,10 @@ config OMI_BATTERY_CHARGE_SPEED_ACTIVE_LOW
 
 config OMI_BATTERY_CHARGING_ENABLE_ACTIVE_LOW
     bool "Charging-enable pin is active low"
+    default y
+
+config OMI_BATTERY_CHARGE_STATUS_ACTIVE_LOW
+    bool "Charge-status pin is active low"
     default y
 
 config OMI_BATTERY_READ_ENABLE_ACTIVE_LOW

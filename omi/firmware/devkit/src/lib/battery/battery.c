@@ -265,8 +265,8 @@ int battery_get_millivolt(uint16_t *battery_millivolt)
     // Convert ADC value to millivolts
     ret |= adc_raw_to_millivolts(adc_vref, ADC_GAIN, ADC_RESOLUTION, &adc_mv);
 
-    // Calculate battery voltage.
-    *battery_millivolt = adc_mv * ((R1 + R2) / R2);
+    // Calculate battery voltage from divider without truncating the ratio first.
+    *battery_millivolt = (uint16_t)(((uint32_t)adc_mv * (uint32_t)(R1 + R2)) / (uint32_t)R2);
     k_mutex_unlock(&battery_mut);
 
     LOG_DBG("%d mV", *battery_millivolt);

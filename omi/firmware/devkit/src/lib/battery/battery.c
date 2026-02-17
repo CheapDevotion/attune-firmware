@@ -237,6 +237,16 @@ int battery_is_charge_enabled(bool *is_enabled)
 
 int battery_get_millivolt(uint16_t *battery_millivolt)
 {
+    if (!is_initialized || battery_millivolt == NULL) {
+        return -ECANCELED;
+    }
+
+    // Safe-mode builds can disable battery read-enable pin to avoid touching
+    // board PMIC control lines. In that mode, ADC battery telemetry is not valid.
+    if (GPIO_BATTERY_READ_ENABLE < 0) {
+        *battery_millivolt = 0;
+        return -ENOTSUP;
+    }
 
     int ret = 0;
 

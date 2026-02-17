@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <hal/nrf_power.h>
 
 #include "button.h"
 #include "codec.h"
@@ -135,6 +136,9 @@ int main(void)
     LOG_INF("Booting minimal XIAO firmware");
     LOG_INF("Model: %s", CONFIG_BT_DIS_MODEL);
     LOG_INF("FW: %s", CONFIG_BT_DIS_FW_REV_STR);
+    const uint32_t reset_reason = NRF_POWER->RESETREAS;
+    NRF_POWER->RESETREAS = reset_reason;
+    LOG_INF("Reset reason: 0x%08x", reset_reason);
 
     err = led_start();
     if (err) {
@@ -195,6 +199,8 @@ int main(void)
         LOG_ERR("Mic start failed: %d", err);
         return err;
     }
+    // Keep capture path off until BLE client connects or explicitly resumes.
+    mic_off();
 
     LOG_INF("Minimal firmware initialized");
 

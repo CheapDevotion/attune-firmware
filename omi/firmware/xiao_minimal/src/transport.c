@@ -96,7 +96,7 @@ enum {
     AUDIO_STATUS_FLAG_STREAM_PAUSED = 1 << 2,
 };
 
-static volatile bool stream_paused = false;
+static volatile bool stream_paused = true;
 static bool battery_filter_initialized = false;
 static uint16_t battery_filtered_mv = 0;
 static uint8_t battery_filtered_percent = 0xFF;
@@ -299,6 +299,9 @@ static void _transport_disconnected(struct bt_conn *conn, uint8_t reason)
     ARG_UNUSED(conn);
     ARG_UNUSED(reason);
     is_connected = false;
+    stream_paused = true;
+    ring_buf_reset(&ring_buf);
+    mic_off();
 
     if (current_connection != NULL) {
         bt_conn_unref(current_connection);
@@ -604,7 +607,9 @@ int bt_off(void)
 
     (void)bt_le_adv_stop();
     (void)bt_disable();
-    stream_paused = false;
+    stream_paused = true;
+    ring_buf_reset(&ring_buf);
+    mic_off();
     is_connected = false;
     current_mtu = 0;
     return 0;

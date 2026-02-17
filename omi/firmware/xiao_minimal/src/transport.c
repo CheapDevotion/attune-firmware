@@ -25,6 +25,7 @@ extern bool usb_charge;
 
 struct bt_conn *current_connection = NULL;
 uint16_t current_mtu = 0;
+static struct ring_buf ring_buf;
 
 static void audio_ccc_config_changed_handler(const struct bt_gatt_attr *attr, uint16_t value)
 {
@@ -329,7 +330,6 @@ static uint8_t tx_buffer[CODEC_OUTPUT_MAX_BYTES + RING_BUFFER_HEADER_SIZE];
 static uint8_t tx_buffer_2[CODEC_OUTPUT_MAX_BYTES + RING_BUFFER_HEADER_SIZE];
 static uint8_t pusher_temp_data[CODEC_OUTPUT_MAX_BYTES + NET_BUFFER_HEADER_SIZE];
 static uint32_t tx_buffer_size = 0;
-static struct ring_buf ring_buf;
 static uint16_t packet_next_index = 0;
 
 static bool write_to_tx_queue(uint8_t *data, size_t size)

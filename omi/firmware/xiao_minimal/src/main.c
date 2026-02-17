@@ -83,6 +83,10 @@ void set_led_state(void)
 static void apply_charger_policy(void)
 {
 #ifdef CONFIG_OMI_ENABLE_BATTERY
+#if defined(CONFIG_OMI_BATTERY_GPIO_CHARGING_ENABLE_PIN) && (CONFIG_OMI_BATTERY_GPIO_CHARGING_ENABLE_PIN < 0)
+    // XIAO build: charger enable is not firmware-controlled.
+    return;
+#else
     const bool should_charge = usb_charge;
     if (charger_state_initialized && charger_enabled == should_charge) {
         return;
@@ -97,6 +101,7 @@ static void apply_charger_policy(void)
     charger_state_initialized = true;
     charger_enabled = should_charge;
     LOG_INF("Battery charger %s (usb=%d)", should_charge ? "enabled" : "disabled", usb_charge);
+#endif
 #endif
 }
 

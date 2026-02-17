@@ -1,5 +1,6 @@
 #include "codec.h"
 
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/ring_buffer.h>
 
@@ -28,13 +29,29 @@ void set_codec_callback(codec_callback callback)
 
 uint8_t codec_ring_buffer_data[AUDIO_BUFFER_SAMPLES * 2]; // 2 bytes per sample
 struct ring_buf codec_ring_buf;
+static uint32_t codec_overrun_count = 0;
+static int64_t codec_last_overrun_log_ms = 0;
 int codec_receive_pcm(int16_t *data, size_t len) // this gets called after mic data is finished
 {
 
-    int written = ring_buf_put(&codec_ring_buf, (uint8_t *) data, len * 2);
-    if (written != len * 2) {
-        LOG_ERR("Failed to write %d bytes to codec ring buffer", len * 2);
-        return -1;
+    const uint32_t bytes = (uint32_t)(len * 2);
+    int written = ring_buf_put(&codec_ring_buf, (uint8_t *) data, bytes);
+    if ((uint32_t)written != bytes) {
+        // Live streaming is more valuable than stale audio. If producer outruns
+        // consumer, drop backlog and keep current frame.
+        codec_overrun_count++;
+        ring_buf_reset(&codec_ring_buf);
+        written = ring_buf_put(&codec_ring_buf, (uint8_t *) data, bytes);
+        if ((uint32_t)written != bytes) {
+            LOG_ERR("Codec ring buffer write failed after reset (%u bytes)", bytes);
+            return -1;
+        }
+
+        const int64_t now_ms = k_uptime_get();
+        if ((now_ms - codec_last_overrun_log_ms) >= 5000) {
+            codec_last_overrun_log_ms = now_ms;
+            LOG_WRN("Codec overrun recovered (count=%u, frame_bytes=%u)", codec_overrun_count, bytes);
+        }
     }
 
     return 0;
